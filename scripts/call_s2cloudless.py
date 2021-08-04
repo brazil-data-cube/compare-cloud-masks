@@ -11,9 +11,6 @@ import os
 import argparse
 from osgeo import gdal_array
 from s2cloudless import S2PixelCloudDetector
-# from s2cloudless import CloudMaskRequest
-# import matplotlib.pyplot as plt
-# import sys
 
 
 def subdirs(path):
@@ -43,32 +40,29 @@ def create_bandarray(path):
     for entry in subdatasets:
         if entry.find("B01") != - 1 or entry.find("band01") != - 1:
             dataset = gdal.Open(entry)
-            buffer_obj = dataset.ReadAsArray()
-    # get required bands as arays
-    for entry in subdatasets:
-        if (entry.find("B01") != -1 or
-            entry.find("B02") != -1 or
-            entry.find("B04") != -1 or
-            entry.find("B05") != -1 or
-            entry.find("B8A") != -1 or
-            entry.find("B08") != -1 or
-            entry.find("B09") != -1 or
-            entry.find("B10") != -1 or
-            entry.find("B11") != -1 or
-            entry.find("B12") != -1) and entry.find(".xml") == -1:
-            dataset = gdal.Open(entry)
-            wms_bands.append(dataset.ReadAsArray(buf_obj=buffer_obj))
+            buff_xsize = dataset.RasterXSize
+            buff_ysize = dataset.RasterYSize
+
+    bands = ['B01', 'B02', 'B04', 'B05', 'B08', 'B8A', 'B09', 
+             'B10', 'B11', 'B12']
+    for b in bands:
+        band = [s for s in subdatasets if b in s][0]
+        if len(band) == 0:
+            raise ValueError("Band not found {}!".format(b))
+        dataset = gdal.Open(band)
+        wms_bands.append(dataset.ReadAsArray(buf_xsize = buff_xsize,
+                                             buf_ysize = buff_ysize,
+                                             buf_type  = gdal.GDT_UInt16))
+
     return wms_bands
 
 
 def create_mask(band_array, path):
     """Crete the mask."""
     stacked = np.stack(band_array, -1)
-    # shape (1, y_pixels, x_pixels, n_bands)
-    # s2cloudless requires binary map
     arr4d = np.expand_dims(stacked / 10000, 0)
-    cloud_detector = S2PixelCloudDetector(threshold=0.7, average_over=4,
-                                          dilation_size=2)
+    cloud_detector = S2PixelCloudDetector(threshold = 0.4, average_over = 4,
+                                          dilation_size = 2)
     cloud_prob_map = cloud_detector.get_cloud_probability_maps(np.array(arr4d))
     cloud_masks = cloud_detector.get_cloud_masks(np.array(arr4d))
     template_file = [os.path.join(path, item) for item in os.listdir(path)
@@ -91,8 +85,6 @@ if __name__ == '__main__':
                         help="directory with Sentinel-2 images")
     args = parser.parse_args()
 
-    # Path to a directory of Sentinel-2 images
-    # in_dir = "/home/alber/Documents/ghProjects/sentinel2-cloud-detector/alber_test/images"
     # Run the algoritmh on each image.
     for img in get_img_dir(args.in_dir):
         band_array = create_bandarray(img)
